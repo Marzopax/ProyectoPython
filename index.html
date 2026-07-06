@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sistema de Triaje de Soporte Inteligente</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+            background-color: #f9f9fb;
+            color: #202020;
+            margin: 0;
+            padding: 40px 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        .container {
+            max-width: 800px;
+            width: 100%;
+            background: #ffffff;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+        }
+        h1 { color: #5a43d6; margin-bottom: 10px; font-size: 24px; }
+        .input-group { margin: 20px 0; padding: 20px; border: 2px dashed #caacb0; border-radius: 6px; text-align: center; }
+        button {
+            background-color: #7b68ee; color: white; border: none; padding: 12px 24px;
+            font-size: 14px; font-weight: 600; border-radius: 5px; cursor: pointer; margin-top: 10px;
+        }
+        button:hover { background-color: #5f48ea; }
+        button:disabled { background-color: #aeacb0; cursor: not-allowed; }
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; font-size: 13px; }
+        th, td { border: 1px solid #e8e2dc; padding: 10px; text-align: left; }
+        th { background-color: #f9f7f4; color: #2c2825; }
+        .status { font-weight: bold; color: #b89a6a; margin-top: 10px; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>🎫 Sistema de limpieza de datos inteligente</h1>
+    <p>Subí un archivo CSV con tus requerimientos de soporte. El sistema limpiará los datos y usará un LLM para asignar el área encargada.</p>
+    
+    <div class="input-group">
+        <input type="file" id="csvFile" accept=".csv"><br><br>
+        <button id="processBtn" disabled>🚀 Procesar e Integrar con IA</button>
+    </div>
+
+    <div id="statusMessage" class="status"></div>
+    
+    <div id="resultContainer" style="display:none;">
+        <h3>📊 Resultados del Pipeline Integrado</h3>
+        <button id="downloadBtn">📥 Descargar CSV Clasificado</button>
+        <div style="overflow-x: auto;">
+            <table id="resultTable">
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Descripción Original (Limpia)</th>
+                        <th>Área Asignada (LLM)</th>
+                    </tr>
+                </thead>
+                <tbody></tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<script>
+    // Configuración de la API con tu Token Autorizado de Hugging Face
+    const HF_TOKEN = "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";
+    const MODEL_URL = "https://api-inference.huggingface.co/models/Recognai/bert-base-spanish-wwm-cased-xnli";
+    const categorias = ["Hardware / Equipos", "Software / Aplicaciones", "Redes / Internet"];
+
+    let datosOriginales = [];
+    let datosProcesados = [];
+
+    const fileInput = document.getElementById('csvFile');
+    const processBtn = document.getElementById('processBtn');
+    const statusMessage = document.getElementById('statusMessage');
+    const resultContainer = document.getElementById('resultContainer');
+    const resultTableBody = document.querySelector('#resultTable tbody');
+    const downloadBtn = document.getElementById('downloadBtn');
+
+    // Habilitar botón al cargar archivo
+    fileInput.addEventListener('change', () => {
+        if(fileInput.files.length > 0) processBtn.disabled = false;
+    });
+
+    processBtn.addEventListener('click', async () => {
+        const file = fileInput.files[0];
+        statusMessage.innerText = "Leyendo archivo y aplicando filtros de limpieza...";
+        
+        const lector = new FileReader();
+        lector.onload = async (e) => {
+            const texto = e.target.result;
+            procesarCSVConPandas(texto);
+        };
+        lector.readAsText(file);
+    });
+
+    // --- FASE PANDAS (Equivalente a las técnicas de la Clase 2) ---
+    function procesarCSVConPandas(textoRaw) {
+        const lineas = textoRaw.split('\n');
+        datosOriginales = [];
+        let descripcionesVistas = new Set();
+
+        for (let i = 1; i < lineas.length; i++) {
+            if (!lineas[i].trim()) continue;
+            
+            const comaIndex = lineas[i].indexOf(',');
+            if(comaIndex === -1) continue;
+            
+            const id = lineas[i].substring(0, comaIndex).trim();
+            const descripcion = lineas[i].substring(comaIndex + 1).trim().replace(/^"|"$/g, ''); 
+
+            // 1. dropna(): Saltea si la descripción viene vacía
+            if (!descripcion) continue; 
+
+            // 2. drop_duplicates(): Evita duplicados idénticos procesados
+            if (descripcionesVistas.has(descripcion)) continue; 
+            
+            descripcionesVistas.add(descripcion);
+            datosOriginales.push({ id, descripcion });
+        }
+
+        if(datosOriginales.length === 0) {
+            statusMessage.innerText = "Error: El CSV no contiene datos válidos en la columna 'descripcion'.";
+            return;
+        }
+
+        llamarAlLLM();
+    }
+
+    // --- FASE LLM (Equivalente a las técnicas de la Clase 6) ---
+    async function llamarAlLLM() {
+        statusMessage.innerText = `Conectando con el LLM de Hugging Face para procesar ${datosOriginales.length} registros...`;
+        datosProcesados = [];
+        resultTableBody.innerHTML = "";
+
+        for (let item of datosOriginales) {
+            try {
+                const response = await fetch(MODEL_URL, {
+                    method: "POST",
+                    headers: {
+                        "Authorization": `Bearer ${HF_TOKEN}`,
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify({
+                        inputs: item.descripcion,
+                        parameters: { candidate_labels: categorias }
+                    })
+                });
+
+                const resultado = await response.json();
+                
+                // Manejo de carga de servidores Hugging Face
+                if (resultado.estimated_time) {
+                    statusMessage.innerText = "Iniciando el servidor del modelo en Hugging Face (esperando 5 segundos)...";
+                    await new Promise(r => setTimeout(r, 5000));
+                    return llamarAlLLM(); 
+                }
+
+                const areaAsignada = resultado.labels[0]; 
+                datosProcesados.push({ ...item, areaAsignada });
+
+                // Agregar los resultados a la tabla interactiva
+                const fila = `<tr><td>${item.id}</td><td>${item.descripcion}</td><td><strong>${areaAsignada}</strong></td></tr>`;
+                resultTableBody.innerHTML += fila;
+
+            } catch (error) {
+                console.error("Error en la inferencia del modelo:", error);
+                statusMessage.innerText = "Ocurrió un error al conectar con Hugging Face.";
+                return;
+            }
+        }
+
+        statusMessage.innerText = "¡Pipeline completado con éxito!";
+        resultContainer.style.display = "block";
+    }
+
+    // --- DESCARGAR RESULTADOS EN CSV ---
+    downloadBtn.addEventListener('click', () => {
+        let csvContenido = "data:text/csv;charset=utf-8,ID,Descripcion,Area_Asignada\n";
+        datosProcesados.forEach(row => {
+            csvContenido += `${row.id},"${row.descripcion}",${row.areaAsignada}\n`;
+        });
+        const encodedUri = encodeURI(csvContenido);
+        const link = document.createElement("a");
+        link.setAttribute("href", encodedUri);
+        link.setAttribute("download", "tickets_soporte_ia.csv");
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    });
+</script>
+
+</body>
+</html>

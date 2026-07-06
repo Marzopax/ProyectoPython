@@ -1,0 +1,6 @@
+id,descripcion
+1,La impresora de secretaria no toma las hojas y hace un ruido extrano al encender.
+2,La impresora de secretaria no toma las hojas y hace un ruido extrano al encender.
+3,
+4,Necesito que me reinstalen la licencia de Excel porque expiro esta mañana.
+5,El modem principal parpadea en luz naranja y nos quedamos sin conexion wifi.
